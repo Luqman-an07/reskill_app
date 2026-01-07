@@ -1,62 +1,123 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# RE:SKILL - Corporate Gamified E-Learning System 🚀
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+**RE:SKILL** adalah Sistem Manajemen Pembelajaran (LMS) internal yang dikembangkan untuk **PT. Ayo Menebar Kebaikan (AMK Group)**. Sistem ini bertujuan untuk meningkatkan kompetensi dan motivasi karyawan melalui integrasi metode **Gamifikasi** (Poin, Badge, Leaderboard) ke dalam proses pelatihan.
 
-## About Laravel
+![Project Status](https://img.shields.io/badge/Status-Development-orange)
+![Laravel](https://img.shields.io/badge/Backend-Laravel-red)
+![Vue.js](https://img.shields.io/badge/Frontend-Vue.js%20%2B%20Inertia-green)
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+---
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## 📋 Fitur Utama
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+### 1. 🎓 Manajemen Pembelajaran (LMS)
+* **Gatekeeper Logic (3 Prioritas):** Materi dikelompokkan menjadi *Wajib (General)*, *Kompetensi Bidang*, dan *Pengembangan Diri*. Tab berikutnya terkunci sebelum tab sebelumnya selesai.
+* **Sequential Learning:** Modul harus diakses secara berurutan.
+* **Multi-Format Content:** Mendukung materi Teks, Video, PDF, dan PPT.
 
-## Learning Laravel
+### 2. 🎮 Gamifikasi (Gamification Engine)
+* **XP System:** Poin otomatis didapat dari membaca materi, lulus kuis, dan menyelesaikan kursus.
+* **Badges (Lencana):** Reward visual otomatis (Contoh: *Quiz Master* untuk nilai 100, *Course Finisher*).
+* **Leaderboard:** Papan peringkat kompetisi antar karyawan (Global & Departemen).
+* **Daily Streak:** Mencatat aktivitas harian berturut-turut.
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+### 3. 📝 Evaluasi & Penilaian
+* **Kuis Dinamis:**
+    * Dilengkapi **Timer Mundur** (Anti-refresh & Server-side validation).
+    * Mode *Review* jika kesempatan habis.
+    * Navigasi soal interaktif.
+* **Tugas Praktik (Assignments):** Fitur upload file tugas dengan status *Pending/Graded* dan *Feedback* dari mentor.
 
-You may also try the [Laravel Bootcamp](https://bootcamp.laravel.com), where you will be guided through building a modern Laravel application from scratch.
+### 4. 📊 Monitoring (Admin/Mentor)
+* Dashboard Statistik Real-time.
+* Laporan Progres Peserta per Departemen.
+* Manajemen User & Role (Admin, Mentor, Peserta).
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+---
 
-## Laravel Sponsors
+## 🛠️ Teknologi yang Digunakan
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+* **Backend:** Laravel 10/11
+* **Frontend:** Vue.js 3 (Composition API)
+* **Adapter:** Inertia.js
+* **Styling:** Tailwind CSS
+* **Database:** MySQL
+* **Icons:** Heroicons / FontAwesome
 
-### Premium Partners
+---
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+## ⚙️ Instalasi & Setup Project
 
-## Contributing
+Ikuti langkah ini untuk menjalankan proyek di komputer lokal (Localhost):
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+### 1. Clone Repository
+```bash
+git clone [https://github.com/username/reskill-lms.git](https://github.com/username/reskill-lms.git)
+cd reskill-lms
 
-## Code of Conduct
+### 2. Install Dependencies
+```bash
+# Install PHP Dependencies
+composer install
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+# Install Node Modules
+npm install
 
-## Security Vulnerabilities
+### 3. Konfigurasi Environment
+cp .env.example .env
+php artisan key:generate
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+### 4. Migrasi & Seeding Data (PENTING)
+php artisan migrate:fresh --seed
 
-## License
+### 5. Jalankan Aplikasi
+# Terminal 1 (Backend)
+php artisan serve
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
-"# RE:SKILL Project" 
+# Terminal 2 (Frontend)
+npm run dev
+
+Akses aplikasi di: http://127.0.0.1:8000
+
+Struktur Kode Penting (Developer Notes)
+Untuk pengembang selanjutnya, harap perhatikan lokasi logika utama berikut:
+
+1. App\Services\GamificationService.php
+Logika inti perhitungan poin dan pengecekan badge.
+
+Function utama: awardPoints(), checkBadges(), tryFinishCourse().
+
+Note: Gunakan service ini di Controller, jangan menulis logika poin manual.
+
+2. App\Http\Controllers\QuizController.php
+Menangani logika Timer (Server-side calculation menggunakan remaining_seconds).
+
+Menangani logika Anti-Cheat dan Scoring.
+
+3. App\Http\Controllers\Admin\CourseContentController.php
+Menangani CRUD Modul (Text, Quiz, Task).
+
+Penting: Saat menyimpan Quiz, durasi disimpan ke tabel quizzes (kolom duration_minutes), bukan hanya di tabel module.
+
+4. Database Schema
+gamification_ledgers: Mencatat riwayat transaksi poin.
+
+badges: Master data lencana.
+
+user_badges: Pivot table user <-> badge.
+
+user_module_progress: Mencatat status penyelesaian modul.
+
+🐛 Known Issues & Troubleshooting
+Timer Kuis Reset: Jika timer kuis tidak sesuai, pastikan kolom duration_minutes di tabel quizzes terisi integer (bukan 0/null). Gunakan form admin yang sudah diperbarui.
+
+Bonus Kursus Tidak Cair: Pastikan semua modul dalam kursus statusnya completed di tabel user_module_progress.
+
+👤 Kontributor
+Luqman Anas Naufal
+
+Role: Fullstack Developer Intern
+
+Instansi: Universitas Duta Bangsa Surakarta
+
+Magang di: PT. Ayo Menebar Kebaikan
