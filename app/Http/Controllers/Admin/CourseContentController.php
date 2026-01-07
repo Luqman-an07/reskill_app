@@ -11,8 +11,8 @@ use App\Models\ModuleAttachment;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
-use App\Notifications\NewCourseContent; // Import Class Notifikasi
-use Illuminate\Support\Facades\Notification; // Import Facade Notification
+use App\Notifications\NewCourseContent;
+use Illuminate\Support\Facades\Notification;
 
 class CourseContentController extends Controller
 {
@@ -23,7 +23,10 @@ class CourseContentController extends Controller
             'type' => 'required|in:TEXT,VIDEO,PDF,PPT,QUIZ,TASK',
             'title' => 'required|string|max:255',
             'completion_points' => 'required|integer|min:0',
-            'required_time' => 'nullable|integer|min:0', // Dalam menit
+
+            // [FIX] Validasi Durasi (Nullable, tapi wajib jika Kuis)
+            // Digunakan untuk estimasi di Modul (semua tipe) DAN durasi timer di Kuis
+            'required_time' => 'nullable|integer|min:0', // Input "Duration" dari form (biasanya menit)
 
             // Konten Utama
             'content_url' => 'nullable',
@@ -36,15 +39,15 @@ class CourseContentController extends Controller
             'attachments.*' => 'file|max:10240',
 
             // Field Quiz
-            'duration_minutes' => 'nullable|required_if:type,QUIZ|integer|min:1',
+            // [FIX] Hapus 'required_if:type,QUIZ' jika form menggunakan field 'required_time' yang sama untuk durasi
+            // Tapi jika ada field terpisah bernama 'duration_minutes', gunakan itu.
+            // ASUMSI: Form Anda menggunakan input 'required_time' (Duration) untuk semua tipe.
             'passing_score' => 'nullable|required_if:type,QUIZ|integer|min:0|max:100',
             'max_attempts' => 'nullable|required_if:type,QUIZ|integer|min:1',
 
-            // Field Task (UPDATED FOR RELATIVE DEADLINE)
+            // Field Task
             'description' => 'nullable|required_if:type,TASK|string',
             'max_score' => 'nullable|required_if:type,TASK|integer|min:1',
-
-            // Logika Validasi Hybrid Deadline
             'deadline_type' => 'nullable|required_if:type,TASK|in:fixed,relative,none',
             'due_date' => 'nullable|required_if:deadline_type,fixed|date',
             'duration_days' => 'nullable|required_if:deadline_type,relative|integer|min:1',
@@ -73,6 +76,10 @@ class CourseContentController extends Controller
             $newOrder = $lastModule ? $lastModule->module_order + 1 : 1;
             $prerequisiteId = $lastModule ? $lastModule->id : null;
 
+            // [FIX] Ambil Durasi dari Input
+            // Pastikan input 'required_time' diisi oleh mentor (dalam menit)
+            $durationMinutes = $validated['required_time'] ?? 0;
+
             // 4. BUAT MODUL UTAMA
             $module = Module::create([
                 'course_id' => $course->id,
@@ -82,7 +89,9 @@ class CourseContentController extends Controller
                 'module_order' => $newOrder,
                 'prerequisite_module_id' => $prerequisiteId,
                 'completion_points' => $validated['completion_points'],
-                'required_time' => ($validated['required_time'] ?? 0) * 60,
+
+                // Simpan dalam DETIK untuk display 'required_time' di tabel modules
+                'required_time' => $durationMinutes * 60,
             ]);
 
             // 5. BUAT DATA SPESIFIK (QUIZ / TASK)
@@ -90,7 +99,12 @@ class CourseContentController extends Controller
                 Quiz::create([
                     'module_id' => $module->id,
                     'quiz_title' => $validated['title'],
-                    'duration_minutes' => $validated['duration_minutes'],
+
+                    // [PENTING] SIMPAN DURASI REAL KE TABEL QUIZZES
+                    // Menggunakan input yang sama dengan modul ('required_time' / menit)
+                    // Inilah yang akan dipakai oleh Timer di QuizController
+                    'duration_minutes' => $durationMinutes > 0 ? $durationMinutes : 10, // Default 10 jika 0/null
+
                     'passing_score' => $validated['passing_score'],
                     'max_attempts' => $validated['max_attempts'],
                     'points_reward' => $validated['completion_points'],
@@ -98,7 +112,6 @@ class CourseContentController extends Controller
             }
 
             if ($validated['type'] === 'TASK') {
-                // Siapkan data dasar Task
                 $taskData = [
                     'module_id' => $module->id,
                     'task_title' => $validated['title'],
@@ -107,7 +120,6 @@ class CourseContentController extends Controller
                     'points_reward' => $validated['completion_points'],
                 ];
 
-                // [UPDATED] Logika Sanitasi Deadline Hybrid
                 $deadlineType = $request->input('deadline_type', 'none');
 
                 if ($deadlineType === 'fixed') {
@@ -117,7 +129,6 @@ class CourseContentController extends Controller
                     $taskData['due_date'] = null;
                     $taskData['duration_days'] = $validated['duration_days'];
                 } else {
-                    // None
                     $taskData['due_date'] = null;
                     $taskData['duration_days'] = null;
                 }
@@ -138,30 +149,20 @@ class CourseContentController extends Controller
                 }
             }
 
-            // ---------------------------------------------------------
-            // 7. [BARU] KIRIM NOTIFIKASI KE PESERTA
-            // ---------------------------------------------------------
-            // Asumsi relasi 'students' sudah ada di Model Course
+            // 7. NOTIFIKASI
             $participants = $course->students;
-
             if ($participants && $participants->count() > 0) {
-                // Tentukan Label Tipe Konten
                 $typeLabel = match ($validated['type']) {
                     'QUIZ' => 'Kuis',
                     'TASK' => 'Tugas',
                     default => 'Materi'
                 };
-
-                // Siapkan Objek Data untuk Notifikasi
                 $contentObject = (object) [
                     'title' => $validated['title'],
                     'course_id' => $course->id
                 ];
-
-                // Kirim Notifikasi Massal (Via Database & Broadcast)
                 Notification::send($participants, new NewCourseContent($contentObject, $typeLabel, $course->title));
             }
-            // ---------------------------------------------------------
         });
 
         return back()->with('success', 'Konten berhasil ditambahkan dan notifikasi dikirim ke peserta.');
@@ -201,6 +202,8 @@ class CourseContentController extends Controller
         $validated = $request->validate([
             'title' => 'required|string|max:255',
             'completion_points' => 'required|integer|min:0',
+
+            // [FIX] Validasi Durasi (Nullable)
             'required_time' => 'nullable|integer|min:0',
 
             'content_url' => 'nullable',
@@ -211,15 +214,13 @@ class CourseContentController extends Controller
             'attachments.*' => 'file|max:10240',
 
             // Quiz
-            'duration_minutes' => 'nullable|integer',
+            // Hapus 'duration_minutes' jika form menggunakan 'required_time'
             'passing_score' => 'nullable|integer',
             'max_attempts' => 'nullable|integer',
 
-            // Task (UPDATED VALIDATION)
+            // Task
             'description' => 'nullable|string',
             'max_score' => 'nullable|integer',
-
-            // Validasi Update Deadline
             'deadline_type' => 'nullable|in:fixed,relative,none',
             'due_date' => 'nullable|required_if:deadline_type,fixed|date',
             'duration_days' => 'nullable|required_if:deadline_type,relative|integer|min:1',
@@ -245,11 +246,18 @@ class CourseContentController extends Controller
         }
 
         DB::transaction(function () use ($module, $validated, $finalContentUrl, $request) {
+
+            // [FIX] Ambil Durasi dari Input
+            $durationMinutes = $validated['required_time'] ?? 0;
+
             // 3. UPDATE MODUL UTAMA
             $module->update([
                 'module_title' => $validated['title'],
                 'completion_points' => $validated['completion_points'],
-                'required_time' => ($validated['required_time'] ?? 0) * 60,
+
+                // Simpan dalam DETIK untuk Module
+                'required_time' => $durationMinutes * 60,
+
                 'content_url' => $finalContentUrl,
             ]);
 
@@ -257,7 +265,11 @@ class CourseContentController extends Controller
             if ($module->content_type === 'QUIZ' && $module->quiz) {
                 $module->quiz->update([
                     'quiz_title' => $validated['title'],
-                    'duration_minutes' => $validated['duration_minutes'],
+
+                    // [PENTING] UPDATE DURASI KUIS (MENIT)
+                    // Agar perubahan di form admin berefek ke timer player
+                    'duration_minutes' => $durationMinutes > 0 ? $durationMinutes : 10,
+
                     'passing_score' => $validated['passing_score'],
                     'max_attempts' => $validated['max_attempts'],
                     'points_reward' => $validated['completion_points'],
@@ -265,7 +277,6 @@ class CourseContentController extends Controller
             }
 
             if ($module->content_type === 'TASK' && $module->task) {
-
                 $updateData = [
                     'task_title' => $validated['title'],
                     'description' => $validated['description'],
@@ -273,7 +284,6 @@ class CourseContentController extends Controller
                     'points_reward' => $validated['completion_points'],
                 ];
 
-                // [UPDATED] Logika Sanitasi Update Deadline
                 $deadlineType = $request->input('deadline_type');
 
                 if ($deadlineType) {

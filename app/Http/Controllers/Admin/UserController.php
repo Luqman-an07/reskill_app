@@ -10,6 +10,7 @@ use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
+use Carbon\Carbon; // [BARU] Import Carbon untuk waktu
 
 class UserController extends Controller
 {
@@ -20,11 +21,10 @@ class UserController extends Controller
         $roleId = $request->input('role_id');
         $deptId = $request->input('department_id');
 
-        $sortField = $request->input('sort', 'name'); // Default sort by Name
+        $sortField = $request->input('sort', 'name');
         $sortDirection = $request->input('direction', 'asc');
 
         // 2. Build Query
-        // Gunakan select users.* agar id tidak tertimpa saat join
         $query = User::select('users.*')
             ->with(['department', 'roles']);
 
@@ -48,7 +48,6 @@ class UserController extends Controller
         // 4. Apply Sorting Server-Side
         switch ($sortField) {
             case 'department_name':
-                // Join ke tabel departments untuk sorting berdasarkan nama
                 $query->leftJoin('departments', 'users.department_id', '=', 'departments.id')
                     ->orderBy('departments.department_name', $sortDirection);
                 break;
@@ -62,23 +61,24 @@ class UserController extends Controller
                 break;
 
             case 'role_name':
-                // Sorting berdasarkan role sedikit kompleks karena many-to-many
-                // Kita gunakan subquery atau sorting manual, tapi untuk simpel kita skip
-                // atau gunakan default name dulu. 
-                // Untuk advanced sort by relation bisa pakai join model_has_roles.
                 $query->orderBy('users.name', $sortDirection);
                 break;
 
-            default: // name, created_at
-                // Pastikan kolom ada di tabel users
+            default:
                 $query->orderBy('users.' . $sortField, $sortDirection);
                 break;
         }
 
-        // 5. Get Data (Pagination)
-        $users = $query->paginate(10)->withQueryString();
+        // 5. Get Data (Pagination) & Inject Online Status
+        $users = $query->paginate(10)
+            ->withQueryString()
+            ->through(function ($user) {
+                // [BARU] Tambahkan atribut is_online ke object user
+                $user->is_online = $user->last_activity_at && $user->last_activity_at->gt(Carbon::now()->subMinutes(5));
+                return $user;
+            });
 
-        // 6. Statistik (Gunakan whereHas agar aman dari error trait)
+        // 6. Statistik
         $stats = [
             'total_users' => User::count(),
             'active_users' => User::where('is_active', true)->count(),
@@ -91,11 +91,11 @@ class UserController extends Controller
             'stats' => $stats,
             'departments' => Department::all(),
             'roles' => Role::all(),
-            // Kirim balik parameter ke frontend untuk menjaga state UI
             'filters' => $request->only(['search', 'role_id', 'department_id', 'sort', 'direction']),
         ]);
     }
 
+    // ... Method store, update, destroy, toggleStatus TETAP SAMA (Tidak perlu diubah) ...
     public function store(Request $request)
     {
         $validated = $request->validate([
@@ -106,7 +106,6 @@ class UserController extends Controller
             'password' => 'required|string|min:8',
         ]);
 
-        // Auto Generate Employee ID (Contoh: EMP-TIMESTAMP)
         $employeeId = 'EMP-' . time();
 
         $user = User::create([
@@ -118,7 +117,6 @@ class UserController extends Controller
             'is_active' => true,
         ]);
 
-        // Assign Role
         $role = Role::findById($validated['role_id']);
         $user->assignRole($role);
 
@@ -149,7 +147,6 @@ class UserController extends Controller
 
         $user->update($data);
 
-        // Sync Role
         $role = Role::findById($validated['role_id']);
         $user->syncRoles([$role]);
 
@@ -160,7 +157,6 @@ class UserController extends Controller
     {
         $user = User::findOrFail($id);
 
-        // Prevent delete self
         if ($user->id === auth()->id()) {
             return back()->with('error', 'Cannot delete your own account.');
         }
@@ -173,7 +169,6 @@ class UserController extends Controller
     {
         $user = User::findOrFail($id);
 
-        // Prevent toggle self
         if ($user->id === auth()->id()) {
             return back()->with('error', 'Cannot deactivate your own account.');
         }

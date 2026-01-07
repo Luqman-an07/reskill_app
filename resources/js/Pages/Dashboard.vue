@@ -65,7 +65,6 @@ const getInitials = (name) => {
 // Fungsi Enroll / Mulai Kursus
 const enrollCourse = (courseId) => {
     enrollingId.value = courseId;
-    // Gunakan route show, nanti di controller show logic firstOrCreate progress akan jalan
     router.get(route('course.show', courseId), {}, {
         onFinish: () => enrollingId.value = null
     });
@@ -195,10 +194,10 @@ const enrollCourse = (courseId) => {
                                             </div>
                                             <div v-if="course.course_bonus_points > 0" class="flex items-center gap-1 bg-yellow-50 text-yellow-700 px-1.5 py-0.5 rounded-r border border-yellow-100 border-l-0 -ml-1">
                                                 <span class="text-gray-300 mx-0.5 text-[9px]">+</span>
-                                                <svg class="w-3 h-3 text-yellow-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 2a1 1 0 011 1v1.323l3.954 1.582 1.699-3.181a1 1 0 011.827 1.035l1.184 5.922 1.628 3.255a1 1 0 01-1.077 1.417l-3.385.847-.847 3.385a1 1 0 01-1.417 1.077l-3.255-1.628-5.922 1.184a1 1 0 01-1.035-1.827L6.677 15H5.414l-3.181 1.699a1 1 0 01-1.417-1.077l.847-3.385-3.385-.847a1 1 0 01-1.077-1.417l1.628-3.255 1.184-5.922a1 1 0 011.827-1.035L5.677 4.323V3a1 1 0 011-1h6zM6 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/></svg>
+                                                <svg class="w-3 h-3 text-yellow-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"/></svg>
                                                 <span class="font-bold">{{ course.course_bonus_points }}</span>
                                             </div>
-                                            <div v-else class="bg-gray-50 text-gray-600 px-1.5 py-0.5 rounded-r border border-gray-100 border-l-0 -ml-1 font-medium">XP</div>
+                                            <div v-else class="bg-gray-600 text-white px-1.5 py-0.5 rounded-r border border-gray-100 border-l-0 -ml-1 font-medium text-[9px]">XP</div>
                                         </div>
                                     </div>
                                 </div>
@@ -212,7 +211,7 @@ const enrollCourse = (courseId) => {
                                         
                                         <div class="flex items-center gap-1">
                                             <div class="flex items-center gap-1 bg-gray-50 text-gray-600 px-1.5 py-0.5 rounded-l border border-gray-100" title="Total XP Modul">
-                                                <svg class="w-3 h-3 text-blue-500" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
+                                                <svg class="w-3 h-3 text-blue-500" fill="currentColor" viewBox="0 0 20 20"><path d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z"/></svg>
                                                 <span class="font-bold">{{ course.module_total_points }}</span>
                                             </div>
                                             <div v-if="course.course_bonus_points > 0" class="flex items-center gap-1 bg-yellow-50 text-yellow-700 px-1.5 py-0.5 rounded-r border border-yellow-100 border-l-0 -ml-1">
@@ -220,7 +219,7 @@ const enrollCourse = (courseId) => {
                                                 <svg class="w-3 h-3 text-yellow-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"/></svg>
                                                 <span class="font-bold">{{ course.course_bonus_points }}</span>
                                             </div>
-                                            <div v-else class="bg-gray-50 text-gray-600 px-1.5 py-0.5 rounded-r border border-gray-100 border-l-0 -ml-1 font-medium">XP</div>
+                                            <div v-else class="bg-gray-600 text-white px-1.5 py-0.5 rounded-r border border-gray-100 border-l-0 -ml-1 font-medium text-[9px]">XP</div>
                                         </div>
                                     </div>
                                 </div>
@@ -273,10 +272,19 @@ const enrollCourse = (courseId) => {
                                  :class="person.id === user.id ? 'bg-blue-50 border border-blue-100' : 'hover:bg-gray-50'">
                                 <div class="flex items-center gap-3">
                                     <span class="text-sm font-bold w-5 text-center" :class="person.id === user.id ? 'text-blue-600' : 'text-gray-400'">{{ idx + 1 }}</span>
-                                    <div class="w-8 h-8 rounded-full overflow-hidden bg-gray-200 flex items-center justify-center text-xs font-bold text-gray-500 border border-gray-100">
-                                        <img v-if="person.profile_picture" :src="'/storage/' + person.profile_picture" class="w-full h-full object-cover">
-                                        <span v-else>{{ getInitials(person.name) }}</span>
+                                    
+                                    <div class="relative inline-block">
+                                        <div class="w-8 h-8 rounded-full overflow-hidden bg-gray-200 flex items-center justify-center text-xs font-bold text-gray-500 border border-gray-100">
+                                            <img v-if="person.profile_picture" :src="'/storage/' + person.profile_picture" class="w-full h-full object-cover">
+                                            <span v-else>{{ getInitials(person.name) }}</span>
+                                        </div>
+                                        <span 
+                                            v-if="person.is_online"
+                                            class="absolute bottom-0 right-0 block h-2.5 w-2.5 rounded-full bg-green-500 ring-2 ring-white animate-pulse"
+                                            title="Sedang Online"
+                                        ></span>
                                     </div>
+
                                     <div>
                                         <p class="text-sm font-bold line-clamp-1 w-24 sm:w-28" :title="person.name">{{ person.id === user.id ? 'Kamu' : person.name }}</p>
                                         <p class="text-[10px] text-gray-500">{{ person.total_points }} XP</p>

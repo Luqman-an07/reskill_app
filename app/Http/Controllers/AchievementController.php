@@ -17,13 +17,9 @@ class AchievementController extends Controller
         /** @var \App\Models\User $user */
         $user = Auth::user();
 
-        // --- 1. LOGIKA RANKING (FIXED & CONSISTENT) ---
-        // Perbaikan: Menggunakan Tie-Breaker (updated_at) agar konsisten dengan Leaderboard Table
+        // --- 1. LOGIKA RANKING ---
         $rank = '-';
         if ($user->roles()->where('name', 'peserta')->exists()) {
-
-            // Hitung user yang posisinya "Di Atas" saya
-            // Syarat: Poin lebih besar ATAU (Poin sama TAPI updated_at lebih dulu/lama)
             $usersBetterThanMe = User::whereHas('roles', function ($q) {
                 $q->where('name', 'peserta');
             })
@@ -31,7 +27,7 @@ class AchievementController extends Controller
                     $query->where('total_points', '>', $user->total_points)
                         ->orWhere(function ($subQuery) use ($user) {
                             $subQuery->where('total_points', $user->total_points)
-                                ->where('updated_at', '<', $user->updated_at); // Prioritas Senioritas
+                                ->where('updated_at', '<', $user->updated_at);
                         });
                 })
                 ->count();
@@ -39,7 +35,7 @@ class AchievementController extends Controller
             $rank = $usersBetterThanMe + 1;
         }
 
-        // --- 2. LOGIKA STREAK (AKTIVITAS HARIAN) ---
+        // --- 2. LOGIKA STREAK ---
         $activityDates = $user->pointLogs()
             ->select(DB::raw('DATE(transaction_date) as date'))
             ->distinct()
@@ -49,8 +45,6 @@ class AchievementController extends Controller
 
         $streak = 0;
         $checkDate = Carbon::now();
-
-        // Cek hari ini
         $today = $checkDate->format('Y-m-d');
         $hasActivityToday = in_array($today, $activityDates);
 
@@ -58,7 +52,6 @@ class AchievementController extends Controller
             $checkDate->subDay();
         }
 
-        // Loop mundur
         while (in_array($checkDate->format('Y-m-d'), $activityDates)) {
             $streak++;
             $checkDate->subDay();
@@ -73,11 +66,13 @@ class AchievementController extends Controller
         $lockedBadges = Badge::whereNotIn('id', $earnedBadgeIds)->get();
 
         // --- 4. BREAKDOWN XP ---
+        // Ambil logs sekali saja untuk efisiensi
         $logs = $user->pointLogs()->get();
 
         $xpBreakdown = [
             [
                 'label' => 'Kursus Selesai',
+                // [NOTE] Ini biasanya untuk poin per modul (Text/Video)
                 'amount' => $logs->where('reason_code', 'MODULE_COMPLETE')->sum('point_amount'),
                 'icon_type' => 'book'
             ],
@@ -93,7 +88,8 @@ class AchievementController extends Controller
             ],
             [
                 'label' => 'Bonus Kursus',
-                'amount' => $logs->where('reason_code', 'COURSE_BONUS')->sum('point_amount'),
+                // [FIX] Ubah COURSE_BONUS menjadi COURSE_COMPLETE
+                'amount' => $logs->where('reason_code', 'COURSE_COMPLETE')->sum('point_amount'),
                 'icon_type' => 'zap'
             ]
         ];

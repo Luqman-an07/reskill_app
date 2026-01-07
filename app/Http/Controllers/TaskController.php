@@ -6,14 +6,24 @@ use App\Events\TaskSubmitted;
 use App\Models\Task;
 use App\Models\UserModuleProgress;
 use App\Models\UserTaskSubmission;
+use App\Services\GamificationService; // [PENTING] Import Service
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
-use Carbon\Carbon; // PENTING: Import Carbon
+use Illuminate\Support\Facades\Log; // Import Log Facade
+use Carbon\Carbon;
 use Inertia\Inertia;
 
 class TaskController extends Controller
 {
+    protected $gamificationService;
+
+    // Inject GamificationService
+    public function __construct(GamificationService $gamificationService)
+    {
+        $this->gamificationService = $gamificationService;
+    }
+
     /**
      * Halaman Instruksi & Upload Tugas.
      * Parameter $moduleId (Konsisten dengan Quiz/Text).
@@ -24,7 +34,6 @@ class TaskController extends Controller
         $user = Auth::user();
 
         // 1. Ambil Task dengan Relasi 'module.course'
-        // Relasi ini PENTING agar Accessor 'personal_deadline' bisa menghitung tanggal enroll user
         $task = Task::with('module.course')
             ->where('module_id', $moduleId)
             ->firstOrFail();
@@ -46,8 +55,7 @@ class TaskController extends Controller
                 'module_title' => $task->module->module_title,
                 'max_score' => $task->max_score,
 
-                // [UPDATED] Kirim Deadline Personal (Fixed atau Relative)
-                // Accessor ini otomatis menghitung tanggal berdasarkan kapan user enroll
+                // Kirim Deadline Personal (Fixed atau Relative)
                 'deadline' => $task->personal_deadline
                     ? $task->personal_deadline->toIso8601String()
                     : null,
@@ -56,7 +64,7 @@ class TaskController extends Controller
                 'status' => $submission->is_graded ? 'Graded' : 'Pending Review',
                 'file_url' => $submission->submission_file_url ? Storage::url($submission->submission_file_url) : null,
                 'submitted_at' => $submission->submission_date,
-                'is_late' => (bool) $submission->is_late, // Kirim status terlambat ke frontend
+                'is_late' => (bool) $submission->is_late,
                 'score' => $submission->score_mentor,
                 'feedback' => $submission->feedback_mentor
             ] : null
@@ -72,7 +80,7 @@ class TaskController extends Controller
         /** @var \App\Models\User $user */
         $user = Auth::user();
 
-        // [PENTING] Load relasi module.course agar Accessor bisa hitung durasi enrollment
+        // Load relasi module.course agar Accessor bisa hitung durasi enrollment
         $task = Task::with('module.course')->findOrFail($id);
 
         // 1. Validasi File
@@ -85,11 +93,8 @@ class TaskController extends Controller
         // 2. LOGIKA SOFT DEADLINE (HYBRID)
         // ---------------------------------------------------------
         $isLate = false;
-
-        // Ambil deadline personal (hasil hitungan Fixed/Relative di Model)
         $deadline = $task->personal_deadline;
 
-        // Jika ada deadline DAN waktu sekarang > deadline
         if ($deadline && Carbon::now()->greaterThan($deadline)) {
             $isLate = true;
         }
@@ -103,17 +108,17 @@ class TaskController extends Controller
             [
                 'submission_file_url' => $path,
                 'submission_date' => now(),
-                'status' => 'submitted', // Status untuk UI
+                'status' => 'submitted',
 
-                'is_late' => $isLate,    // [BARU] Simpan status terlambat
-                'is_graded' => false,    // Reset jadi belum dinilai
-                'score_mentor' => null,  // Reset nilai (agar fair dinilai ulang)
-                // 'notes' => $request->notes // Jika ada kolom notes di tabel
+                'is_late' => $isLate,
+                'is_graded' => false,
+                'score_mentor' => null,
+                // 'notes' => $request->notes 
             ]
         );
 
         // 4. Update Progress Modul (Soft Blocking)
-        // Langsung set 'completed' agar modul selanjutnya terbuka, walau belum dinilai
+        // Langsung set 'completed' agar modul selanjutnya terbuka
         UserModuleProgress::updateOrCreate(
             ['user_id' => $user->id, 'module_id' => $task->module_id],
             [
@@ -127,13 +132,25 @@ class TaskController extends Controller
         try {
             TaskSubmitted::dispatch($submission);
         } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::error("Broadcasting Error: " . $e->getMessage());
+            Log::error("Broadcasting Error: " . $e->getMessage());
         }
 
-        // 6. Feedback Pesan
-        $msg = $isLate
-            ? 'Tugas berhasil dikirim (Tercatat Terlambat). Menunggu pemeriksaan Mentor.'
-            : 'Tugas berhasil dikirim tepat waktu! Silakan lanjut ke materi berikutnya.';
+        // 6. [LOGIKA BARU] CEK PENYELESAIAN KURSUS (BONUS POIN)
+        // Panggil service untuk mengecek apakah ini modul terakhir.
+        // Catatan: Biasanya tugas harus dinilai dulu untuk lulus kursus,
+        // tapi jika sistem Anda "Submit = Selesai Modul", maka kita cek di sini.
+        // Jika sistem Anda "Nilai >= KKM = Selesai", pindahkan logika ini ke controller penilaian Mentor.
+
+        $courseCompleted = $this->gamificationService->tryFinishCourse($user, $task->module->course_id);
+
+        // 7. Feedback Pesan
+        if ($courseCompleted) {
+            $msg = 'Selamat! Tugas terkirim dan Anda telah menyelesaikan seluruh materi kursus!';
+        } elseif ($isLate) {
+            $msg = 'Tugas berhasil dikirim (Tercatat Terlambat). Menunggu pemeriksaan Mentor.';
+        } else {
+            $msg = 'Tugas berhasil dikirim tepat waktu! Silakan lanjut ke materi berikutnya.';
+        }
 
         return redirect()->back()->with('success', $msg);
     }
@@ -165,8 +182,8 @@ class TaskController extends Controller
                     'id' => $sub->id,
                     'task_title' => $sub->task->task_title,
                     'course_title' => $sub->task->module->course->title ?? 'Kursus Dihapus',
-                    'submission_date' => \Carbon\Carbon::parse($sub->submission_date)->diffForHumans(),
-                    'full_date' => \Carbon\Carbon::parse($sub->submission_date)->format('d M Y, H:i'),
+                    'submission_date' => Carbon::parse($sub->submission_date)->diffForHumans(),
+                    'full_date' => Carbon::parse($sub->submission_date)->format('d M Y, H:i'),
                     'status' => $sub->is_graded ? 'Dinilai' : 'Menunggu',
                     'is_late' => $sub->is_late,
                     'score' => $sub->score_mentor,

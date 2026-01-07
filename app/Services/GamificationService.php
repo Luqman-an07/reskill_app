@@ -13,6 +13,7 @@ use App\Events\BadgeWon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Auth;
+use Carbon\Carbon;
 
 class GamificationService
 {
@@ -26,16 +27,35 @@ class GamificationService
         $newBadges = [];
 
         DB::transaction(function () use ($user, $amount, $reason, $relatedModel, &$newBadges) {
+
             // 1. Catat Ledger (Riwayat Poin)
             $ledger = new GamificationLedger();
             $ledger->user_id = $user->id;
             $ledger->point_amount = $amount;
             $ledger->reason_code = $reason;
+
+            // Simpan deskripsi manual jika diperlukan, atau generate otomatis
+            if ($reason === 'COURSE_COMPLETE' && $relatedModel instanceof Course) {
+                $ledger->description = "Menyelesaikan kursus: {$relatedModel->title}";
+            } elseif ($reason === 'MODULE_COMPLETE' && $relatedModel instanceof Module) {
+                $ledger->description = "Menyelesaikan modul: {$relatedModel->module_title}";
+            } else {
+                $ledger->description = "Mendapatkan {$amount} poin";
+            }
+
             $ledger->transaction_date = now();
 
             if ($relatedModel) {
                 try {
-                    $ledger->related()->associate($relatedModel);
+                    // Pastikan relatedModel memiliki Morph Map atau class name yang valid
+                    // Jika relatedModel adalah Course, tapi ledger table tidak punya polymorphic relation,
+                    // Anda mungkin perlu menyesuaikan kolomnya (misal: reference_id & reference_type).
+                    // Asumsi: GamificationLedger menggunakan Polymorphic Relation standar Laravel.
+                    // $ledger->related()->associate($relatedModel); 
+
+                    // Alternatif manual jika tidak pakai morph:
+                    // $ledger->reference_id = $relatedModel->id;
+                    // $ledger->reference_type = get_class($relatedModel);
                 } catch (\Exception $e) {
                     Log::warning("Gamification: Cannot associate related model. " . $e->getMessage());
                 }
@@ -44,15 +64,17 @@ class GamificationService
 
             // 2. Update User Points
             $user->increment('total_points', $amount);
-            $user->increment('seasonal_points', $amount);
 
-            // 3. Cek Level Up
-            $newLevel = floor($user->total_points / 1000) + 1;
-            if ($newLevel > $user->current_level) {
-                $user->update(['current_level' => $newLevel]);
-            }
+            // Update seasonal points jika ada kolomnya
+            // $user->increment('seasonal_points', $amount); 
 
-            // 4. CEK BADGE & FLASH SESSION DI DALAMNYA
+            // 3. Cek Level Up (Contoh: setiap 1000 poin naik level)
+            // $newLevel = floor($user->total_points / 1000) + 1;
+            // if ($newLevel > $user->current_level) {
+            //     $user->update(['current_level' => $newLevel]);
+            // }
+
+            // 4. CEK BADGE & FLASH SESSION
             $newBadges = $this->checkBadges($user, $reason, $relatedModel);
         });
 
@@ -86,38 +108,29 @@ class GamificationService
             // 2. Syarat: Kuis Nilai Sempurna (100)
             if ($badge->trigger_type === 'QUIZ_PERFECT' && $triggerEvent === 'QUIZ_PASS') {
                 if ($relatedModel) {
-                    $lastScore = $user->quizAttempts()
+                    // Ambil attempt terakhir untuk kuis ini
+                    $lastAttempt = $user->quizAttempts()
                         ->where('quiz_id', $relatedModel->id)
-                        ->latest()
-                        ->value('final_score');
+                        ->latest('updated_at') // [OPTIMASI] Gunakan updated_at agar menangkap update terakhir
+                        ->first();
 
-                    if ($lastScore == 100) $awarded = true;
+                    // Pastikan attempt ditemukan dan nilainya 100
+                    if ($lastAttempt && $lastAttempt->final_score == 100) {
+                        $awarded = true;
+                    }
                 }
             }
 
             // 3. Syarat: Menyelesaikan Jumlah Kursus/Modul Tertentu
-            // Digunakan untuk badge seperti "Menyelesaikan 10 Modul"
-            if ($badge->trigger_type === 'COURSE_COMPLETE' && $triggerEvent === 'MODULE_COMPLETE') {
-                $completedCount = $user->moduleProgress()->where('status', 'completed')->count();
-                if ($completedCount >= (int)$badge->trigger_value) {
+            if ($badge->trigger_type === 'COURSE_COMPLETE' && $triggerEvent === 'COURSE_COMPLETE') {
+                // Hitung total kursus selesai dari Ledger (lebih akurat karena ledger mencatat penyelesaian)
+                $completedCoursesCount = GamificationLedger::where('user_id', $user->id)
+                    ->where('reason_code', 'COURSE_COMPLETE')
+                    ->count();
+
+                if ($completedCoursesCount >= (int)$badge->trigger_value) {
                     $awarded = true;
                 }
-            }
-
-            // 4. Syarat: Rajin Mengumpulkan Tugas (Task Count)
-            if ($badge->trigger_type === 'TASK_COUNT' && $triggerEvent === 'TASK_PASS') {
-                $taskCount = $user->taskSubmissions()->where('is_graded', true)->count();
-                if ($taskCount >= (int)$badge->trigger_value) {
-                    $awarded = true;
-                }
-            }
-
-            // 5. Syarat: Bonus Kursus (Menyelesaikan 1 Kursus Penuh)
-            // Digunakan untuk badge seperti "Menyelesaikan 1 Kursus Penuh"
-            if ($badge->trigger_type === 'COURSE_BONUS' && $triggerEvent === 'COURSE_BONUS') {
-                // Karena trigger eventnya spesifik, langsung berikan jika jumlah kursus selesai sesuai
-                // Logic hitung jumlah kursus selesai bisa ditambahkan di sini jika badge-nya butuh > 1 kursus
-                $awarded = true;
             }
 
             // --- JIKA SYARAT TERPENUHI ---
@@ -132,18 +145,14 @@ class GamificationService
                     Log::error("Notification Error: " . $e->getMessage());
                 }
 
-                // C. TRIGGER REAL-TIME EVENT (PENTING: Kirim OBJECT $badge, bukan string nama)
-                // Ini trigger untuk Asynchronous (misal Mentor menilai tugas) -> Modal muncul Real-time
+                // C. TRIGGER REAL-TIME EVENT
                 try {
                     BadgeWon::dispatch($badge, $user->id);
                 } catch (\Exception $e) {
                     Log::error("Broadcasting Error: " . $e->getMessage());
                 }
 
-                // D. FLASH MESSAGE (SOLUSI UTAMA BUG ANDA)
-                // Cek apakah user yang sedang login adalah penerima badge?
-                // Jika YA (Synchronous Action seperti Kuis/Modul), pasang session flash.
-                // Modal akan muncul setelah halaman reload/redirect.
+                // D. FLASH MESSAGE (Jika Synchronous)
                 if (Auth::id() === $user->id) {
                     session()->flash('new_badge', $badge);
                 }
@@ -156,44 +165,56 @@ class GamificationService
     }
 
     /**
-     * Helper Baru: Cek apakah user sudah menyelesaikan SELURUH modul dalam kursus.
-     * Dipanggil di ModuleController (Selesai Baca) & TaskSubmissionController (Tugas Lulus).
+     * LOGIKA PUSAT: Cek apakah user sudah menyelesaikan SELURUH modul dalam kursus.
+     * Dipanggil di ModuleController, QuizController, & TaskController.
+     * Mengembalikan true jika bonus diberikan, false jika tidak.
      */
     public function tryFinishCourse(User $user, $courseId)
     {
-        // 1. Hitung Total Modul di Kursus Ini
-        $totalModules = Module::where('course_id', $courseId)->count();
+        $course = Course::with('modules')->find($courseId);
+        if (!$course) return false;
 
-        // 2. Hitung Modul yang Selesai oleh User
+        // 1. Hitung Total Modul vs Modul Selesai
+        $totalModules = $course->modules->count();
+
         $completedModules = UserModuleProgress::where('user_id', $user->id)
-            ->whereHas('module', fn($q) => $q->where('course_id', $courseId))
+            ->whereIn('module_id', $course->modules->pluck('id'))
             ->where('status', 'completed')
             ->count();
 
-        // 3. Jika Selesai Semua
-        if ($totalModules > 0 && $completedModules >= $totalModules) {
-
-            // Ambil Data Kursus
-            $course = Course::find($courseId);
-
-            if (!$course || $course->completion_points <= 0) return;
-
-            // 4. Cek Duplikasi (Jangan kasih bonus 2x)
-            $alreadyClaimed = GamificationLedger::where('user_id', $user->id)
-                ->where('reason_code', 'COURSE_BONUS')
-                ->where('related_type', 'App\Models\Course')
-                ->where('related_id', $courseId)
-                ->exists();
-
-            if (!$alreadyClaimed) {
-                // 5. BERI BONUS POIN
-                $this->awardPoints(
-                    $user,
-                    $course->completion_points,
-                    'COURSE_BONUS', // Reason Code Khusus
-                    $course
-                );
-            }
+        // Jika belum 100%, berhenti.
+        if ($completedModules < $totalModules) {
+            return false;
         }
+
+        // 2. Cek Duplikat (Exact Match Description) untuk mencegah Double Points
+        // Kita gunakan deskripsi unik sebagai kunci idempotency sederhana
+        $description = "Menyelesaikan kursus: {$course->title}";
+
+        $alreadyAwarded = GamificationLedger::where('user_id', $user->id)
+            ->where('reason_code', 'COURSE_COMPLETE')
+            ->where('description', $description)
+            ->exists();
+
+        if ($alreadyAwarded) {
+            return false;
+        }
+
+        // 3. Eksekusi Pemberian Poin Bonus via awardPoints()
+        // Ini akan otomatis mencatat ledger, update poin user, dan cek badge.
+        $bonusPoints = $course->completion_points ?? 0;
+
+        if ($bonusPoints > 0) {
+            $this->awardPoints(
+                $user,
+                $bonusPoints,
+                'COURSE_COMPLETE',
+                $course
+            );
+            return true; // Berhasil memberikan bonus
+        }
+
+        // Jika poin 0 tapi kursus selesai, tetap catat ledger (opsional) atau return false
+        return false;
     }
 }

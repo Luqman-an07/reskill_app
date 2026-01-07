@@ -8,11 +8,12 @@ use App\Models\Department;
 use App\Models\User;
 use App\Models\UserModuleProgress;
 use App\Models\UserQuizAttempt;
+use App\Models\GamificationLedger; // Pastikan Model ini diimport
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 use Barryvdh\DomPDF\Facade\Pdf;
-use Illuminate\Support\Facades\DB;
+use Carbon\Carbon; // Import Carbon
 
 class ReportController extends Controller
 {
@@ -35,11 +36,10 @@ class ReportController extends Controller
         // --- 2. AMBIL PARAMETER FILTER & SORT ---
         $deptId = $request->input('department_id');
         $courseId = $request->input('course_id');
-        $sortField = $request->input('sort', 'name'); // Default sort by Name
-        $sortDirection = $request->input('direction', 'asc'); // Default Ascending
+        $sortField = $request->input('sort', 'name');
+        $sortDirection = $request->input('direction', 'asc');
 
         // --- 3. BUILD QUERY PESERTA ---
-        // Kita gunakan select user.* agar saat join tidak tertimpa
         $query = User::select('users.*')
             ->whereHas('roles', fn($q) => $q->where('name', 'peserta'))
             ->with(['department', 'moduleProgress.module', 'quizAttempts', 'badges']);
@@ -60,32 +60,24 @@ class ReportController extends Controller
             if ($isMentor && !$myCourseIds->contains($courseId)) {
                 abort(403, 'Anda tidak memiliki akses ke laporan kursus ini.');
             }
-            // Filter user yang enroll di kursus spesifik ini
             $query->whereHas('moduleProgress.module', fn($q) => $q->where('course_id', $courseId));
         }
 
         // --- 4. APPLY SERVER-SIDE SORTING ---
-        // Kita gunakan switch case untuk menangani sorting berbagai kolom
         switch ($sortField) {
             case 'name':
                 $query->orderBy('name', $sortDirection);
                 break;
-
             case 'total_points':
                 $query->orderBy('total_points', $sortDirection);
                 break;
-
             case 'last_active':
                 $query->orderBy('last_activity_at', $sortDirection);
                 break;
-
             case 'avg_score':
-                // Sorting berdasarkan rata-rata nilai (Complex Query)
-                // Kita gunakan withAvg untuk menambahkan kolom virtual 'quiz_attempts_avg_final_score'
                 $query->withAvg('quizAttempts', 'final_score')
                     ->orderBy('quiz_attempts_avg_final_score', $sortDirection);
                 break;
-
             default:
                 $query->orderBy('name', 'asc');
                 break;
@@ -95,7 +87,6 @@ class ReportController extends Controller
         $participants = $query->paginate(10)->withQueryString()
             ->through(function ($student) use ($isMentor, $myCourseIds) {
 
-                // Filter data spesifik per baris (row) untuk kalkulasi
                 $progressQuery = $student->moduleProgress;
                 $quizQuery = $student->quizAttempts;
 
@@ -119,21 +110,19 @@ class ReportController extends Controller
                     'enrolled' => $enrolledCount,
                     'completed' => $completedCount,
                     'avg_score' => round($avgScore),
-                    'total_xp' => $student->total_points, // Data DB langsung
+                    'total_xp' => $student->total_points,
                     'badges_count' => $student->badges->count(),
                     'last_active' => $student->last_activity_at ? $student->last_activity_at->diffForHumans() : '-',
+
+                    // [UPDATED] Tambahkan Status Online
+                    'is_online' => $student->last_activity_at && $student->last_activity_at->gt(Carbon::now()->subMinutes(5)),
                 ];
             });
 
 
         // --- 6. DATA STATISTIK (HEADER & GRAFIK) ---
-        // Kita butuh ID user yang terkena filter (tanpa pagination) untuk statistik global
-        // Cloning query sebelum paginate untuk mendapatkan ID
-
-        // Reset order dan select untuk count agar lebih ringan
         $userIds = $query->reorder()->pluck('users.id');
 
-        // Query Helper
         $baseProgressQuery = UserModuleProgress::whereIn('user_id', $userIds);
         $baseQuizQuery = UserQuizAttempt::whereIn('user_id', $userIds);
 
@@ -192,7 +181,7 @@ class ReportController extends Controller
                 ->whereIn('module_id', $c->modules->pluck('id'))
                 ->distinct('user_id')->count();
 
-            if ($usersInCourse == 0) return null; // Skip jika kosong
+            if ($usersInCourse == 0) return null;
 
             $totalPotential = $c->modules()->count() * $usersInCourse;
             $completedReal = UserModuleProgress::whereIn('user_id', $userIds)
@@ -217,16 +206,11 @@ class ReportController extends Controller
         ];
 
         // --- 7. PREPARE PROPS FOR VIEW ---
-
-        // Filter Dept: Kosongkan jika Mentor (sesuai request sebelumnya)
         $deptOptions = $isMentor ? [] : Department::all();
-
-        // Filter Course: Sesuai scope
         $courseOptions = $isMentor
             ? Course::where('mentor_id', $user->id)->select('id', 'title')->get()
             : Course::select('id', 'title')->get();
 
-        // Tentukan Base Route untuk Vue
         $baseRoute = $isMentor ? 'mentor.reports.index' : 'admin.reports.index';
 
         return Inertia::render('Admin/Reports/Index', [
@@ -242,6 +226,7 @@ class ReportController extends Controller
             ],
             'baseRoute' => $baseRoute,
             'exportRoute' => 'admin.reports.export',
+            'detailRouteName' => $isMentor ? 'mentor.reports.show' : null, // Opsi untuk Mentor View
         ]);
     }
 
@@ -279,7 +264,7 @@ class ReportController extends Controller
             $query->whereHas('moduleProgress.module', fn($q) => $q->where('course_id', $courseId));
         }
 
-        // Sorting (Agar PDF urut sesuai tabel)
+        // Sorting
         if ($sortField === 'name') $query->orderBy('name', $sortDirection);
         elseif ($sortField === 'total_points') $query->orderBy('total_points', $sortDirection);
         else $query->orderBy('name', 'asc');
@@ -314,11 +299,9 @@ class ReportController extends Controller
         return $pdf->download('Laporan_Peserta_RESKILL.pdf');
     }
 
-    // Method exportUser & showUser tetap sama (tidak perlu diubah)
+    // Method exportUser tetap sama
     public function exportUser($userId)
     {
-        // ... (kode lama exportUser) ...
-        // Jika perlu, saya bisa sertakan juga, tapi biasanya tidak berubah
         $user = User::with(['department', 'badges', 'quizAttempts.quiz', 'moduleProgress.module.course'])
             ->findOrFail($userId);
 
@@ -341,10 +324,11 @@ class ReportController extends Controller
         return $pdf->download("Laporan_{$user->name}.pdf");
     }
 
+    /**
+     * Menampilkan Detail User (Modal / JSON Response).
+     */
     public function showUser($id)
     {
-        // Pastikan kode showUser Anda sebelumnya tetap ada di sini
-        // Gunakan kode showUser dari step 54/55 yang sudah valid.
         $user = User::with(['department', 'badges', 'quizAttempts'])->findOrFail($id);
 
         $enrolledCourseIds = $user->moduleProgress->pluck('module.course_id')->unique();
@@ -377,7 +361,8 @@ class ReportController extends Controller
                 ];
             });
 
-        $activities = $user->pointLogs()
+        // [PERBAIKAN] Menggunakan GamificationLedger agar tidak error table 'point_logs'
+        $activities = GamificationLedger::where('user_id', $user->id)
             ->latest('transaction_date')
             ->take(10)
             ->get()
@@ -414,6 +399,9 @@ class ReportController extends Controller
                 'department' => $user->department->department_name ?? '-',
                 'join_date' => $user->created_at->format('Y-m-d'),
                 'last_active' => $user->last_activity_at ? $user->last_activity_at->diffForHumans() : 'Never',
+
+                // [UPDATED] Status Online untuk Modal
+                'is_online' => $user->last_activity_at && $user->last_activity_at->gt(Carbon::now()->subMinutes(5)),
             ],
             'stats' => $stats,
             'courses' => $courseProgress,

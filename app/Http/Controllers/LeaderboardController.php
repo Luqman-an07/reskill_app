@@ -44,6 +44,7 @@ class LeaderboardController extends Controller
                 'current_points' => $u->total_points,
                 'yesterday_points' => $pointsYesterday,
                 'updated_at' => $u->updated_at, // PENTING: Untuk Tie-Breaker
+                'last_activity_at' => $u->last_activity_at, // [BARU] Untuk Status Online
             ];
         });
 
@@ -67,16 +68,21 @@ class LeaderboardController extends Controller
             $userId = $item['user']->id;
 
             // Cari rank kemarin user ini untuk hitung trend
-            // search() mengembalikan index (mulai 0), jadi +1
             $prevIndex = $rankedYesterday->search(function ($prevItem) use ($userId) {
                 return $prevItem['user']->id === $userId;
             });
 
             $prevRank = ($prevIndex !== false) ? $prevIndex + 1 : $currentRank;
 
-            // Hitung Trend: (Rank Lama - Rank Baru)
-            // Contoh: Dulu 5, Sekarang 2. Trend = 5 - 2 = +3 (Naik)
+            // Hitung Trend
             $trend = $prevRank - $currentRank;
+
+            // [LOGIKA BARU] Cek Status Online (5 Menit Terakhir)
+            $isOnline = false;
+            if ($item['last_activity_at']) {
+                $lastActive = Carbon::parse($item['last_activity_at']);
+                $isOnline = $lastActive->gt(Carbon::now()->subMinutes(5));
+            }
 
             return [
                 'id' => $userId,
@@ -86,6 +92,7 @@ class LeaderboardController extends Controller
                 'total_points' => $item['current_points'],
                 'rank' => $currentRank,
                 'trend' => $trend,
+                'is_online' => $isOnline, // [BARU] Kirim ke Frontend
             ];
         });
 

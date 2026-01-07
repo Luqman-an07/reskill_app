@@ -20,6 +20,7 @@ const props = defineProps({
     charts: Object,
     baseRoute: String,
     exportRoute: String,
+    detailRouteName: String, // [OPSIONAL] Nama route untuk detail (misal: 'mentor.reports.show')
 });
 
 // --- STATE ---
@@ -29,7 +30,7 @@ const activeTab = ref('progres_individu');
 const isLoadingData = ref(false);
 
 // --- STATE SORTING ---
-const sortField = ref(props.filters.sort || 'name'); // Default sort by Name
+const sortField = ref(props.filters.sort || 'name'); 
 const sortDirection = ref(props.filters.direction || 'asc');
 
 const sort = (field) => {
@@ -47,8 +48,8 @@ watch([filterDept, filterCourse, sortField, sortDirection], debounce(() => {
     router.get(route(props.baseRoute), { 
         department_id: filterDept.value,
         course_id: filterCourse.value,
-        sort: sortField.value,       // Kirim parameter sort
-        direction: sortDirection.value // Kirim parameter direction
+        sort: sortField.value,       
+        direction: sortDirection.value 
     }, { 
         preserveState: true, 
         replace: true,
@@ -121,7 +122,18 @@ const isLoadingStudent = ref(false);
 const studentData = ref(null);
 const studentTab = ref('progres_kursus'); 
 
-const openStudentDetail = async (userId) => {
+// Modifikasi fungsi open detail agar bisa redirect jika ada route detail
+const openDetail = (userId) => {
+    if (props.detailRouteName) {
+        // Jika ada route detail (misal mode Mentor), pindah halaman
+        router.visit(route(props.detailRouteName, userId));
+    } else {
+        // Jika tidak (mode Admin biasa), buka modal
+        openStudentDetailModal(userId);
+    }
+};
+
+const openStudentDetailModal = async (userId) => {
     isStudentModalOpen.value = true;
     isLoadingStudent.value = true;
     studentTab.value = 'progres_kursus';
@@ -266,11 +278,20 @@ const openStudentDetail = async (userId) => {
                                 <tbody class="bg-white divide-y divide-gray-200">
                                     <tr v-for="p in participants.data" :key="p.id" class="hover:bg-gray-50 transition">
                                         <td class="px-6 py-4 whitespace-nowrap flex items-center gap-3">
-                                            <div class="h-9 w-9 rounded-full bg-blue-100 flex items-center justify-center text-xs font-bold text-blue-700 border border-blue-200 overflow-hidden shrink-0">
-                                                <img v-if="p.avatar" :src="'/storage/'+p.avatar" class="w-full h-full object-cover">
-                                                <span v-else>{{ getInitials(p.name) }}</span>
+                                            
+                                            <div class="relative inline-block shrink-0">
+                                                <div class="h-9 w-9 rounded-full bg-blue-100 flex items-center justify-center text-xs font-bold text-blue-700 border border-blue-200 overflow-hidden">
+                                                    <img v-if="p.avatar" :src="'/storage/'+p.avatar" class="w-full h-full object-cover">
+                                                    <span v-else>{{ getInitials(p.name) }}</span>
+                                                </div>
+                                                <span 
+                                                    v-if="p.is_online" 
+                                                    class="absolute bottom-0 right-0 block h-2.5 w-2.5 rounded-full bg-green-500 ring-2 ring-white animate-pulse"
+                                                    title="Sedang Online"
+                                                ></span>
                                             </div>
-                                            <div class="ml-4">
+
+                                            <div class="ml-1">
                                                 <div class="text-sm font-bold text-gray-900">
                                                     {{ p.name }}
                                                 </div>
@@ -296,7 +317,9 @@ const openStudentDetail = async (userId) => {
                                         <td class="px-6 py-4 whitespace-nowrap text-xs text-gray-500 font-mono">{{ p.last_active }}</td>
                                         <td class="px-6 py-4 whitespace-nowrap text-right">
                                             <div class="flex justify-end gap-3">
-                                                <button @click="openStudentDetail(p.id)" title="Lihat Detail" class="text-gray-400 hover:text-blue-600 transition"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg></button>
+                                                <button @click="openDetail(p.id)" title="Lihat Detail" class="text-gray-400 hover:text-blue-600 transition">
+                                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                                                </button>
                                                 <a :href="route('admin.reports.export.user', p.id)" title="Unduh Laporan" class="text-gray-400 hover:text-green-600 transition"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg></a>
                                             </div>
                                         </td>
@@ -384,12 +407,25 @@ const openStudentDetail = async (userId) => {
                     
                     <div class="p-6 sm:p-8 border-b border-gray-100 bg-white flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6">
                         <div class="flex items-center gap-5">
-                            <div class="w-16 h-16 rounded-full bg-blue-100 flex items-center justify-center text-2xl font-bold text-blue-700 overflow-hidden border-2 border-white shadow-md shrink-0">
-                                <img v-if="studentData.user.avatar" :src="'/storage/'+studentData.user.avatar" class="w-full h-full object-cover">
-                                <span v-else>{{ getInitials(studentData.user.name) }}</span>
+                            
+                            <div class="relative inline-block shrink-0">
+                                <div class="w-16 h-16 rounded-full bg-blue-100 flex items-center justify-center text-2xl font-bold text-blue-700 overflow-hidden border-2 border-white shadow-md">
+                                    <img v-if="studentData.user.avatar" :src="'/storage/'+studentData.user.avatar" class="w-full h-full object-cover">
+                                    <span v-else>{{ getInitials(studentData.user.name) }}</span>
+                                </div>
+                                
+                                <span 
+                                    v-if="studentData.user.is_online" 
+                                    class="absolute bottom-1 right-1 block h-4 w-4 rounded-full bg-green-500 ring-2 ring-white animate-pulse"
+                                    title="Sedang Online"
+                                ></span>
                             </div>
+
                             <div>
-                                <h2 class="text-xl sm:text-2xl font-bold text-gray-900">{{ studentData.user.name }}</h2>
+                                <div class="flex items-center gap-3">
+                                    <h2 class="text-xl sm:text-2xl font-bold text-gray-900">{{ studentData.user.name }}</h2>
+                                    <span v-if="studentData.user.is_online" class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-bold">Online</span>
+                                </div>
                                 <p class="text-sm text-gray-500">{{ studentData.user.email }}</p>
                                 <div class="flex flex-wrap items-center gap-2 sm:gap-3 mt-2 text-xs text-gray-400">
                                     <span class="bg-gray-100 px-2 py-0.5 rounded text-gray-600 font-medium">{{ studentData.user.department }}</span>

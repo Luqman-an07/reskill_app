@@ -309,6 +309,7 @@ class MentorController extends Controller
                 'charts' => null,
                 'baseRoute' => 'mentor.reports.index',
                 'exportRoute' => 'admin.reports.export',
+                'detailRouteName' => 'mentor.reports.show', // Default route
             ]);
         }
 
@@ -322,7 +323,6 @@ class MentorController extends Controller
         $query = User::select('users.*')
             ->whereHas('roles', fn($q) => $q->where('name', 'peserta'))
             ->whereHas('moduleProgress')
-            // [UPDATED] Tambahkan 'quizAttempts.quiz.module' agar bisa difilter by course di collection
             ->with(['department', 'moduleProgress.module', 'quizAttempts.quiz.module', 'badges']);
 
         if ($deptId) $query->where('department_id', $deptId);
@@ -352,12 +352,11 @@ class MentorController extends Controller
         $participants = $query->paginate(10)->withQueryString()
             ->through(function ($student) use ($courseId) {
 
-                // [FIX ERROR SQL] Menggunakan Collection (Data Memory) alih-alih Query Builder
-                // $student->moduleProgress adalah Collection, bukan Builder.
+                // Menggunakan Collection (Data Memory)
                 $progressData = $student->moduleProgress;
                 $quizData = $student->quizAttempts;
 
-                // Jika ada filter course_id, kita filter Collection-nya di sini
+                // Jika ada filter course_id, filter Collection di sini
                 if ($courseId) {
                     $progressData = $progressData->filter(function ($p) use ($courseId) {
                         return $p->module && $p->module->course_id == $courseId;
@@ -368,7 +367,7 @@ class MentorController extends Controller
                     });
                 }
 
-                // Hitung dari Collection (Tidak akan error SQL missing table)
+                // Hitung dari Collection
                 $enrolledCount = $progressData->pluck('module.course_id')->unique()->count();
                 $completedCount = $progressData->where('status', 'completed')->count();
                 $avgScore = $quizData->avg('final_score') ?? 0;
@@ -379,12 +378,15 @@ class MentorController extends Controller
                     'email' => $student->email,
                     'avatar' => $student->profile_picture,
                     'department' => $student->department ? $student->department->department_name : '-',
-                    'enrolled' => $enrolledCount, // Jumlah Kursus (Unik)
-                    'completed' => $completedCount, // Jumlah Modul Selesai
+                    'enrolled' => $enrolledCount,
+                    'completed' => $completedCount,
                     'avg_score' => round($avgScore),
                     'total_xp' => $student->total_points,
                     'badges_count' => $student->badges->count(),
                     'last_active' => $student->last_activity_at ? $student->last_activity_at->diffForHumans() : '-',
+
+                    // [BARU] Status Online (5 menit terakhir)
+                    'is_online' => $student->last_activity_at && $student->last_activity_at->gt(now()->subMinutes(5)),
                 ];
             });
 
@@ -415,6 +417,9 @@ class MentorController extends Controller
             'charts' => $charts,
             'baseRoute' => 'mentor.reports.index',
             'exportRoute' => 'admin.reports.export',
+
+            // [PENTING] Ini memberitahu Vue untuk membuka halaman detail (bukan modal) saat diklik
+            'detailRouteName' => 'mentor.reports.show',
         ]);
     }
 
@@ -423,11 +428,21 @@ class MentorController extends Controller
      */
     public function showStudentReport($userId)
     {
-        // 1. Ambil Data Siswa
-        $student = User::with(['department', 'badges'])->findOrFail($userId);
+        // 1. Ambil Data Siswa (Model)
+        $studentModel = User::with(['department', 'badges'])->findOrFail($userId);
+
+        // [BARU] Konversi ke Array agar bisa inject 'is_online'
+        // Ini diperlukan karena kita tidak ingin mengubah struktur database
+        $student = $studentModel->toArray();
+        $student['department'] = $studentModel->department; // Pastikan relasi terbawa
+        $student['badges'] = $studentModel->badges;         // Pastikan relasi terbawa
+
+        // Logika Online: Aktif dalam 5 menit terakhir
+        $student['is_online'] = $studentModel->last_activity_at
+            && $studentModel->last_activity_at->gt(\Carbon\Carbon::now()->subMinutes(5));
 
         // 2. Ambil Kursus yang diambil siswa ini (Berdasarkan Progress Modul)
-        // Kita gunakan whereHas untuk memfilter kursus mana saja yang dia ikuti
+        // (Logika Query Tetap Sama Persis)
         $enrolledCourses = Course::whereHas('modules.progress', function ($q) use ($userId) {
             $q->where('user_id', $userId);
         })
@@ -473,11 +488,11 @@ class MentorController extends Controller
             'total_courses' => $enrolledCourses->count(),
             'completed_courses' => $enrolledCourses->where('progress', 100)->count(),
             'avg_global_score' => round($enrolledCourses->avg('avg_score')),
-            'total_xp' => $student->total_points
+            'total_xp' => $studentModel->total_points // Ambil dari Model asli agar aman
         ];
 
         return Inertia::render('Mentor/Reports/Show', [
-            'student' => $student,
+            'student' => $student, // [UPDATED] Array dengan is_online
             'courses' => $enrolledCourses,
             'stats' => $stats
         ]);

@@ -9,6 +9,7 @@
         modules: Array,      // List Modul (Silabus)
         gamification: Object, // { total_points, earned_points, bonus_points }
         isEnrolled: Boolean,
+        isCompleted: Boolean, // [BARU] Status Kelulusan
         progressPercent: Number,
         firstModuleId: Number,
         resumeModule: Object, // { id, type } - Modul terakhir/selanjutnya
@@ -21,7 +22,7 @@
     const joinCourse = () => {
         isJoining.value = true;
         router.post(route('course.enroll', props.course.id), {}, {
-            preserveScroll: true, // Penting agar posisi scroll tidak loncat
+            preserveScroll: true, 
             onFinish: () => {
                 isJoining.value = false;
             },
@@ -34,7 +35,7 @@
     // --- ACTION: OPEN MODULE (Smart Routing) ---
     const openModule = (module) => {
         // 1. Cek Kunci
-        if (module.status === 'locked') return; // Jangan lakukan apa-apa jika terkunci
+        if (module.status === 'locked') return; 
         
         // 2. Redirect sesuai tipe konten
         if (module.type === 'QUIZ') {
@@ -148,25 +149,31 @@
                                 <div v-if="isEnrolled">
                                     <div class="flex justify-between items-end mb-2">
                                         <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">Progress</span>
-                                        <span class="text-lg font-black text-blue-600">{{ progressPercent }}%</span>
+                                        <span class="text-lg font-black" :class="isCompleted ? 'text-green-600' : 'text-blue-600'">{{ progressPercent }}%</span>
                                     </div>
                                     
                                     <div class="w-full bg-gray-200 rounded-full h-2.5 mb-5 overflow-hidden">
-                                        <div class="bg-blue-600 h-full rounded-full transition-all duration-1000 ease-out" :style="{ width: progressPercent + '%' }"></div>
+                                        <div class="h-full rounded-full transition-all duration-1000 ease-out" 
+                                             :class="isCompleted ? 'bg-green-500' : 'bg-blue-600'"
+                                             :style="{ width: progressPercent + '%' }"></div>
                                     </div>
     
                                     <div class="flex gap-4">
                                         <Link 
                                             :href="resumeLink" 
-                                            class="flex-1 inline-flex items-center justify-center px-6 py-4 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition shadow-lg shadow-blue-200 transform active:scale-[0.98] group"
+                                            class="flex-1 inline-flex items-center justify-center px-6 py-4 text-white font-bold rounded-xl transition shadow-lg transform active:scale-[0.98] group"
+                                            :class="isCompleted 
+                                                ? 'bg-green-600 hover:bg-green-700 shadow-green-200' 
+                                                : 'bg-blue-600 hover:bg-blue-700 shadow-blue-200'"
                                         >
                                             <div class="flex flex-col items-start">
-                                                <span class="text-xs font-normal opacity-80 uppercase tracking-wide">
-                                                    {{ progressPercent === 100 ? 'Review Ulang' : 'Lanjut Training' }}
+                                                <span class="text-xs font-normal opacity-90 uppercase tracking-wide">
+                                                    {{ isCompleted ? 'Selesai' : 'Lanjut Training' }}
                                                 </span>
                                             </div>
                                             <div class="ml-auto bg-white/20 p-1.5 rounded-lg group-hover:bg-white/30 transition">
-                                                <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
+                                                <svg v-if="isCompleted" class="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
+                                                <svg v-else class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
                                             </div>
                                         </Link>
                                     </div>
@@ -174,36 +181,39 @@
                                     <div class="mt-5 pt-4 border-t border-gray-200">
                                         <div class="flex items-center gap-3">
                                             <div class="flex-shrink-0 w-12 h-12 rounded-full flex items-center justify-center border-2 transition-colors duration-500"
-                                                :class="progressPercent === 100 
+                                                :class="isCompleted 
                                                     ? 'bg-yellow-100 border-yellow-200 text-yellow-600' 
                                                     : 'bg-white border-dashed border-gray-300 text-gray-400'"
                                             >
-                                                <svg v-if="progressPercent === 100" class="w-6 h-6 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" /></svg>
+                                                <svg v-if="isCompleted" class="w-6 h-6 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" /></svg>
                                                 <svg v-else class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7" /></svg>
                                             </div>
-    
+
                                             <div class="flex-1">
                                                 <p class="text-[10px] font-bold uppercase tracking-wider mb-0.5 text-gray-400">
                                                     Hadiah Penyelesaian
                                                 </p>
                                                 <div class="flex flex-col">
                                                     <span class="text-xs font-bold text-gray-700 leading-tight">Bonus Kursus</span>
-                                                    <span class="text-sm font-black" :class="progressPercent === 100 ? 'text-yellow-600' : 'text-gray-500'">
+                                                    <span class="text-sm font-black" :class="isCompleted ? 'text-yellow-600' : 'text-gray-500'">
                                                         +{{ gamification.bonus_points }} XP
                                                     </span>
                                                 </div>
                                             </div>
                                         </div>
-    
+
                                         <div class="mt-3 text-[10px] bg-gray-50 py-2 px-3 rounded-lg border border-gray-100">
                                             <div class="flex justify-between items-center mb-1">
                                                 <span class="text-gray-500">Poin Modul:</span>
-                                                <span class="font-bold text-gray-700">{{ gamification.earned_points }} XP</span>
+                                                <span class="font-bold text-gray-700">
+                                                    {{ gamification.earned_module_points }} XP
+                                                </span>
                                             </div>
+                                            
                                             <div class="flex justify-between items-center pt-1 border-t border-gray-200">
                                                 <span class="text-gray-500">Total Akumulasi:</span>
                                                 <span class="font-bold text-blue-600">
-                                                    {{ gamification.earned_points + (progressPercent === 100 ? gamification.bonus_points : 0) }} / {{ gamification.total_points }}
+                                                    {{ gamification.earned_total_points }} / {{ gamification.max_total_points }}
                                                 </span>
                                             </div>
                                         </div>
@@ -332,9 +342,10 @@
                             <Link 
                                 v-if="isEnrolled" 
                                 :href="resumeLink"
-                                class="flex items-center justify-center w-full px-4 py-2.5 bg-blue-600 text-white font-bold rounded-xl shadow-lg hover:bg-blue-700 active:scale-95 transition"
+                                class="flex items-center justify-center w-full px-4 py-2.5 text-white font-bold rounded-xl shadow-lg active:scale-95 transition"
+                                :class="isCompleted ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700'"
                             >
-                                Lanjut
+                                {{ isCompleted ? 'Selesai / Ulas' : 'Lanjut' }}
                             </Link>
     
                             <button 
